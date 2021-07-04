@@ -41,7 +41,7 @@ contract ChronoDev is Context {
     // Transactions to be accepted by all owners
     mapping (bytes32 => mapping (address => bool)) transactions;
     // Last Payday
-    uint256 lastPayDay;
+    uint lastPayDay;
     // Delay between paydays
     uint256 MINIMUM_PAY_DELAY = 604800;
     // Payday stuff
@@ -227,7 +227,7 @@ contract ChronoDev is Context {
     }
     // Payday. Must be called by one of the owners. Once every week
     function payDay() public onlyOwner {
-        uint256 delay = block.timestamp.sub(lastPayDay);
+        uint delay = block.timestamp.sub(lastPayDay);
         require(delay >= MINIMUM_PAY_DELAY, "ChronoDev: Not yet, my friend.");
         uint16 i;
         uint16 j;
@@ -294,7 +294,7 @@ contract ChronoDev is Context {
     function getDestinations() public view returns(uint256) {
         return destinations.length;
     }
-    function getLastPayday() public view onlyOwner returns(uint256) {
+    function getLastPayday() public view onlyOwner returns(uint) {
         return lastPayDay;
     }
 }

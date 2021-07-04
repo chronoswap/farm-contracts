@@ -24,10 +24,10 @@ contract ChronoMaster is Ownable {
         // We do some fancy math here. Basically, any point in time, the amount of ThoPs
         // entitled to a user but is pending to be distributed is:
         //
-        //   pending reward = (user.amount * pool.accCakePerShare) - user.rewardDebt
+        //   pending reward = (user.amount * pool.accTokenPerShare) - user.rewardDebt
         //
         // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-        //   1. The pool's `accCakePerShare` (and `lastRewardBlock`) gets updated.
+        //   1. The pool's `accTokenPerShare` (and `lastRewardBlock`) gets updated.
         //   2. User receives the pending reward sent to his/her address.
         //   3. User's `amount` gets updated.
         //   4. User's `rewardDebt` gets updated.
@@ -38,7 +38,7 @@ contract ChronoMaster is Ownable {
         IBEP20 lpToken;           // Address of LP token contract.
         uint256 allocPoint;       // How many allocation points assigned to this pool. ThoPs to distribute per block.
         uint256 lastRewardBlock;  // Last block number that ThoPs distribution occurs.
-        uint256 accCakePerShare;  // Accumulated ThoPs per share, times 1e12. See below.
+        uint256 accTokenPerShare;  // Accumulated ThoPs per share, times 1e12. See below.
         uint16 depositFee;       // Deposit fee in percentage.
     }
 
@@ -53,7 +53,7 @@ contract ChronoMaster is Ownable {
     // Burn ratio.
     uint256 public burnRate;
     // ThoP tokens created per block.
-    uint256 public cakePerBlock;
+    uint256 public tokenPerBlock;
     // Reduction time for ThoP tokens created per block.
     uint256 public reductionDelta;
     // Bonus muliplier for early ThoP makers.
@@ -76,6 +76,11 @@ contract ChronoMaster is Ownable {
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
 
+    modifier validatePoolByPid(uint256 _pid) {
+        require(_pid < poolInfo.length,'ChronoMaster: Pool Does not exist');
+        _;
+    }
+
     constructor(
         OneKProjectsToken _thop,
         address _devaddr,
@@ -85,23 +90,11 @@ contract ChronoMaster is Ownable {
         devaddr = _devaddr;
         devRate = 909;
         burnaddr = _burnaddr;
-        burnRate = 50;
-        cakePerBlock = 3472223077864510000;
-        reductionDelta = 604800;
+        burnRate = 5000;
+        tokenPerBlock = 3472223077864510000;
+        reductionDelta = 7200; // 604800;
         startBlock = block.number;
         startTime = block.timestamp;
-
-        // staking pool
-        poolInfo.push(PoolInfo({
-            lpToken: _thop,
-            allocPoint: 1000,
-            lastRewardBlock: startBlock,
-            accCakePerShare: 0,
-            depositFee: 0
-        }));
-
-        totalAllocPoint = 1000;
-
     }
 
     function updateMultiplier(uint256 multiplierNumber) public onlyOwner {
@@ -125,38 +118,20 @@ contract ChronoMaster is Ownable {
             lpToken: IBEP20(_lpToken),
             allocPoint: _allocPoint,
             lastRewardBlock: lastRewardBlock,
-            accCakePerShare: 0,
+            accTokenPerShare: 0,
             depositFee: _depositFee
         }));
-        updateStakingPool();
     }
 
     // Update the given pool's THOP allocation point. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFee, bool _withUpdate) public onlyOwner {
+    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFee, bool _withUpdate) public onlyOwner validatePoolByPid(_pid) {
         require(_depositFee < 100, "set: invalid deposit fee percentage");
         if (_withUpdate) {
             massUpdatePools();
         }
         totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
-        uint256 prevAllocPoint = poolInfo[_pid].allocPoint;
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFee = _depositFee;
-        if (prevAllocPoint != _allocPoint) {
-            updateStakingPool();
-        }
-    }
-
-    function updateStakingPool() internal {
-        uint256 length = poolInfo.length;
-        uint256 points = 0;
-        for (uint256 pid = 1; pid < length; ++pid) {
-            points = points.add(poolInfo[pid].allocPoint);
-        }
-        if (points != 0) {
-            points = points.div(3);
-            totalAllocPoint = totalAllocPoint.sub(poolInfo[0].allocPoint).add(points);
-            poolInfo[0].allocPoint = points;
-        }
     }
 
     // Return reward multiplier over the given _from to _to block.
@@ -165,20 +140,20 @@ contract ChronoMaster is Ownable {
     }
 
     // View function to see pending ThoPs on frontend.
-    function pendingCake(uint256 _pid, address _user) external view returns (uint256) {
+    function pendingToken(uint256 _pid, address _user) external view validatePoolByPid(_pid) returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
-        uint256 accCakePerShare = pool.accCakePerShare;
-        uint256 lpSupply = lpTokenAmount[_pid];;
+        uint256 accTokenPerShare = pool.accTokenPerShare;
+        uint256 lpSupply = lpTokenAmount[_pid];
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
 
             uint256[] memory _stats = getCurrentRates();
 
-            uint256 cakeReward = multiplier.mul(_stats[2]).mul(pool.allocPoint).div(totalAllocPoint);
-            accCakePerShare = accCakePerShare.add(cakeReward.mul(1e12).div(lpSupply));
+            uint256 tokenReward = multiplier.mul(_stats[2]).mul(pool.allocPoint).div(totalAllocPoint);
+            accTokenPerShare = accTokenPerShare.add(tokenReward.mul(1e12).div(lpSupply));
         }
-        return user.amount.mul(accCakePerShare).div(1e12).sub(user.rewardDebt);
+        return user.amount.mul(accTokenPerShare).div(1e12).sub(user.rewardDebt);
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
@@ -189,9 +164,8 @@ contract ChronoMaster is Ownable {
         }
     }
 
-
     // Update reward variables of the given pool to be up-to-date.
-    function updatePool(uint256 _pid) public {
+    function updatePool(uint256 _pid) public validatePoolByPid(_pid) {
         PoolInfo storage pool = poolInfo[_pid];
         if (block.number <= pool.lastRewardBlock) {
             return;
@@ -205,28 +179,25 @@ contract ChronoMaster is Ownable {
 
         uint256[] memory _stats = getCurrentRates();
 
-        uint256 cakeToBurn = multiplier.mul(_stats[0]).mul(pool.allocPoint).div(totalAllocPoint);
-        uint256 cakeToDev = multiplier.mul(_stats[1]).mul(pool.allocPoint).div(totalAllocPoint);
-        uint256 cakeReward = multiplier.mul(_stats[2]).mul(pool.allocPoint).div(totalAllocPoint);
-        thop.mint(burnaddr, cakeToBurn);
-        thop.mint(devaddr, cakeToDev);
-        thop.mint(address(this), cakeReward);
-        pool.accCakePerShare = pool.accCakePerShare.add(cakeReward.mul(1e12).div(lpSupply));
+        uint256 tokenToBurn = multiplier.mul(_stats[0]).mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 tokenToDev = multiplier.mul(_stats[1]).mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 tokenReward = multiplier.mul(_stats[2]).mul(pool.allocPoint).div(totalAllocPoint);
+        thop.mint(burnaddr, tokenToBurn);
+        thop.mint(devaddr, tokenToDev);
+        thop.mint(address(this), tokenReward);
+        pool.accTokenPerShare = pool.accTokenPerShare.add(tokenReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
 
     // Deposit LP tokens to MasterChef for ThoP allocation.
-    function deposit(uint256 _pid, uint256 _amount) public {
-
-        require (_pid != 0, 'deposit ThoP by staking');
-
+    function deposit(uint256 _pid, uint256 _amount) public validatePoolByPid(_pid) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
         if (user.amount > 0) {
-            uint256 pending = user.amount.mul(pool.accCakePerShare).div(1e12).sub(user.rewardDebt);
+            uint256 pending = user.amount.mul(pool.accTokenPerShare).div(1e12).sub(user.rewardDebt);
             if(pending > 0) {
-                safeCakeTransfer(msg.sender, pending);
+                safeTokenTransfer(msg.sender, pending);
             }
         }
         if (_amount > 0) {
@@ -241,75 +212,31 @@ contract ChronoMaster is Ownable {
             }
             lpTokenAmount[_pid] += user.amount;
         }
-        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(pool.accTokenPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
     }
 
     // Withdraw LP tokens from MasterChef.
-    function withdraw(uint256 _pid, uint256 _amount) public {
-
-        require (_pid != 0, 'withdraw ThoP by unstaking');
-
+    function withdraw(uint256 _pid, uint256 _amount) public validatePoolByPid(_pid) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
-        uint256 pending = user.amount.mul(pool.accCakePerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pending = user.amount.mul(pool.accTokenPerShare).div(1e12).sub(user.rewardDebt);
         if(pending > 0) {
-            safeCakeTransfer(msg.sender, pending);
+            safeTokenTransfer(msg.sender, pending);
         }
         if(_amount > 0) {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
             lpTokenAmount[_pid] -= _amount;
         }
-        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(pool.accTokenPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
-    // Stake THOP tokens to MasterChef
-    function enterStaking(uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[0][msg.sender];
-        updatePool(0);
-        if (user.amount > 0) {
-            uint256 pending = user.amount.mul(pool.accCakePerShare).div(1e12).sub(user.rewardDebt);
-            if(pending > 0) {
-                safeCakeTransfer(msg.sender, pending);
-            }
-        }
-        if(_amount > 0) {
-            pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-            user.amount = user.amount.add(_amount);
-            lpTokenAmount[_pid] += _amount;
-        }
-        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
-
-        emit Deposit(msg.sender, 0, _amount);
-    }
-
-    // Withdraw THOP tokens from STAKING.
-    function leaveStaking(uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[0];
-        UserInfo storage user = userInfo[0][msg.sender];
-        require(user.amount >= _amount, "withdraw: not good");
-        updatePool(0);
-        uint256 pending = user.amount.mul(pool.accCakePerShare).div(1e12).sub(user.rewardDebt);
-        if(pending > 0) {
-            safeCakeTransfer(msg.sender, pending);
-        }
-        if(_amount > 0) {
-            user.amount = user.amount.sub(_amount);
-            pool.lpToken.safeTransfer(address(msg.sender), _amount);
-            lpTokenAmount[0] -= _amount;
-        }
-        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
-
-        emit Withdraw(msg.sender, 0, _amount);
-    }
-
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) public {
+    function emergencyWithdraw(uint256 _pid) public validatePoolByPid(_pid) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         pool.lpToken.safeTransfer(address(msg.sender), user.amount);
@@ -320,10 +247,10 @@ contract ChronoMaster is Ownable {
     }
 
     // Safe Thop transfer function, just in case if rounding error causes pool to not have enough ThoPs.
-    function safeCakeTransfer(address _to, uint256 _amount) internal {
-        uint256 cakeBal = thop.balanceOf(address(this));
-        if (_amount > cakeBal) {
-            thop.transfer(_to, cakeBal);
+    function safeTokenTransfer(address _to, uint256 _amount) internal {
+        uint256 tokenBal = thop.balanceOf(address(this));
+        if (_amount > tokenBal) {
+            thop.transfer(_to, tokenBal);
         } else {
             thop.transfer(_to, _amount);
         }
@@ -335,9 +262,9 @@ contract ChronoMaster is Ownable {
         devaddr = _devaddr;
     }
 
-    function getCurrentRates() private view returns (uint256[] memory) { // TODO Check this
+    function getCurrentRates() public view returns (uint256[] memory) { // TODO Check this
         uint16 i;
-        uint256 calcblocks = cakePerBlock;
+        uint256 calcblocks = tokenPerBlock;
         uint256 _burnRate = burnRate;
         uint256 duration = block.timestamp - startTime;
         uint256 mulNum = duration.div(reductionDelta);
@@ -347,7 +274,7 @@ contract ChronoMaster is Ownable {
             _burnRate = _burnRate.div(100).mul(99);
         }
         uint256[] memory stats = new uint256[](3);
-        uint256 toBurn = calcblocks.div(100).mul(_burnRate);
+        uint256 toBurn = calcblocks.div(10000).mul(_burnRate);
         uint256 toDev = calcblocks.div(10000).mul(devRate);
         uint256 toPools = calcblocks.sub(toBurn).sub(toDev);
         stats[0] = toBurn;
@@ -359,7 +286,7 @@ contract ChronoMaster is Ownable {
 
     function getCurrentPerBlock() public view returns (uint256) {
         uint16 i;
-        uint256 calcblocks = cakePerBlock;
+        uint256 calcblocks = tokenPerBlock;
         uint256 duration = block.timestamp - startTime;
         uint256 mulNum = duration.div(reductionDelta);
 
