@@ -40,10 +40,6 @@ contract ChronoDev is Context {
     Dest[] public destinations;
     // Transactions to be accepted by all owners
     mapping (bytes32 => mapping (address => bool)) transactions;
-    // Last Payday
-    uint lastPayDay;
-    // Delay between paydays
-    uint256 MINIMUM_PAY_DELAY = 604800;
     // Payday stuff
     uint256 totalAcc = 10000;
     uint256 fixedAcc = 0;
@@ -117,7 +113,6 @@ contract ChronoDev is Context {
           rate: 1111,
           isFixed: false
         }));
-        lastPayDay = block.timestamp;
         tokens.push(BEP20(_thop));
     }
     // Function to add a new owner. All owners must call it to be effective
@@ -131,11 +126,12 @@ contract ChronoDev is Context {
         bool isOkForEveryone = checkStatus(_msgSender(), _txHash);
         if (isOkForEveryone) {
           owners[_newOwner] = true;
+          ownerList.push(_newOwner);
           if (benefitiary) {
             destinations.push(Dest({
               name: "owner",
               addr: _newOwner,
-              rate: 0,
+              rate: 0,  // It will be updated later
               isFixed: false
             }));
             update();
@@ -225,17 +221,25 @@ contract ChronoDev is Context {
         }
         destinations[0].rate = _dynamicAcc.sub(_dynamicUsed);
     }
-    // Payday. Must be called by one of the owners. Once every week
+    // Payday. Must be called by one of the owners
     function payDay() public onlyOwner {
-        uint delay = block.timestamp.sub(lastPayDay);
-        require(delay >= MINIMUM_PAY_DELAY, "ChronoDev: Not yet, my friend.");
         uint16 i;
         uint16 j;
         uint256 balance;
-        for (i = 0; i < tokens.length; i++) {
-          balance = tokens[i].balanceOf(address(this));
+        // ThoP
+        balance = tokens[0].balanceOf(address(this));
+        if (balance > 0) {
           for (j = 0; j < destinations.length; j++) {
-            tokens[i].transfer(destinations[j].addr, balance.mul(destinations[j].rate).div(totalAcc));
+            tokens[0].transfer(destinations[j].addr, balance.mul(destinations[j].rate).div(totalAcc));
+          }
+        }
+        // Rest of the tokens
+        for (i = 1; i < tokens.length; i++) {
+          balance = tokens[i].balanceOf(address(this));
+          if (balance > 0) {
+            for (j = 0; j < ownerList.length; j++) {
+              tokens[i].transfer(ownerList[j], balance.div(ownerList.length));
+            }
           }
         }
     }
@@ -293,8 +297,5 @@ contract ChronoDev is Context {
     // Getter funcitons
     function getDestinations() public view returns(uint256) {
         return destinations.length;
-    }
-    function getLastPayday() public view onlyOwner returns(uint) {
-        return lastPayDay;
     }
 }

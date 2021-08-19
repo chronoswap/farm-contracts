@@ -12,6 +12,9 @@ module.exports = async (deployer) => {
   let addr = JSON.parse(addrRaw);
   if (chainId.toString() === "56" || chainId.toString() === "97") {
     console.log("We are in BSC!")
+    if (chainId.toString() === "56") {
+      console.log("Please, keep calm")
+    }
     accounts = await web3.eth.getAccounts();
     addr["dev"] = accounts[0];
   } else {
@@ -35,26 +38,31 @@ module.exports = async (deployer) => {
   // Deploy ThoP
   console.log("Deploying ThoP...")
   const thop = await deployer.deploy(OneKProjectsToken, {from: addr.dev});
-  // Deploy Chro
-  console.log("Deploying CHRO...")
-  const chro = await deployer.deploy(ChronoToken, {from: addr.dev});
   // Mint Some Thop to people
-  console.log("Minting some ThoP...")
-  await thop.mint(addr.owner1, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
-  await thop.mint(addr.owner2, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
-  await thop.mint(addr.owner3, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
-  // Mint Some Chro to people
-  console.log("Minting some Chro...")
-  await chro.mint(web3.utils.toBN('3000000000000000000000'), {from: addr.dev});
-  await chro.transfer(addr.owner1, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
-  await chro.transfer(addr.owner2, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
-  await chro.transfer(addr.owner3, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+  if (chainId.toString() !== "56") {
+    console.log("Minting some ThoP...")
+    // await thop.mint(addr.owner1, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+    // await thop.mint(addr.owner2, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+    // await thop.mint(addr.owner3, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+  }
+  // Deploy Chro
+  let chro
+  if (chainId.toString() !== "56") {
+    console.log("Deploying CHRO...")
+    // chro = await deployer.deploy(ChronoToken, {from: addr.dev});
+    // Mint Some Chro to people
+    // console.log("Minting some Chro...")
+    // await chro.mint(web3.utils.toBN('3000000000000000000000'), {from: addr.dev});
+    // await chro.transfer(addr.owner1, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+    // await chro.transfer(addr.owner2, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+    // await chro.transfer(addr.owner3, web3.utils.toBN('1000000000000000000000'), {from: addr.dev});
+  }
   //Saving addresses
   console.log("Saving addresses...")
   const title = "./information/" + chainId.toString() + "_2_token_migration.json"
   let infos = {
     'ThoP': thop.address,
-    'CHRO': chro.address,
+    'CHRO': chro?chro.address:"",
   };
   let data = JSON.stringify(infos, null, 2);
   fs.writeFile(title, data, 'utf-8');

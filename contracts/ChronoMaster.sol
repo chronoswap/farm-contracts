@@ -48,6 +48,8 @@ contract ChronoMaster is Ownable {
     address public devaddr;
     // Burn address. All balance in this account will be burned weekly.
     address public burnaddr;
+    // Buy back address. All balance in this account will be used to buy Thop and burn.
+    address public buybackaddr;
     // Dev ratio.
     uint256 public devRate;
     // Burn ratio.
@@ -84,15 +86,17 @@ contract ChronoMaster is Ownable {
     constructor(
         OneKProjectsToken _thop,
         address _devaddr,
-        address _burnaddr
+        address _burnaddr,
+        address _buybackaddr
     ) public {
         thop = OneKProjectsToken(_thop);
         devaddr = _devaddr;
         devRate = 909;
         burnaddr = _burnaddr;
+        buybackaddr = _buybackaddr;
         burnRate = 5000;
         tokenPerBlock = 3472223077864510000;
-        reductionDelta = 7200; // 604800;
+        reductionDelta = 604800;
         startBlock = block.number;
         startTime = block.timestamp;
     }
@@ -204,7 +208,7 @@ contract ChronoMaster is Ownable {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             if(pool.depositFee > 0){
                 uint256 depositFee = _amount.mul(pool.depositFee).div(100);
-                pool.lpToken.safeTransfer(burnaddr, depositFee.div(2));
+                pool.lpToken.safeTransfer(buybackaddr, depositFee.div(2));
                 pool.lpToken.safeTransfer(devaddr, depositFee.div(2));
                 user.amount = user.amount.add(_amount).sub(depositFee);
             }else{
@@ -262,7 +266,7 @@ contract ChronoMaster is Ownable {
         devaddr = _devaddr;
     }
 
-    function getCurrentRates() public view returns (uint256[] memory) { // TODO Check this
+    function getCurrentRates() public view returns (uint256[] memory) { 
         uint16 i;
         uint256 calcblocks = tokenPerBlock;
         uint256 _burnRate = burnRate;

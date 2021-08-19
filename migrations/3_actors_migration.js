@@ -14,6 +14,9 @@ module.exports = async (deployer) => {
   let addr = JSON.parse(addrRaw);
   if (chainId.toString() === "56" || chainId.toString() === "97") {
     console.log("We are in BSC!")
+    if (chainId.toString() === "56") {
+      console.log("Please, keep calm")
+    }
     accounts = await web3.eth.getAccounts();
     addr["dev"] = accounts[0];
   } else {
@@ -42,17 +45,17 @@ module.exports = async (deployer) => {
   const thop = await OneKProjectsToken.at(tokenAddr.ThoP);
   // Deploying The Black Hole
   console.log("Deploying the Black Hole...")
-  const hole = await deployer.deploy(BlackHole, thop.address, addr.burn, {from: addr.dev});
+  // const hole = await deployer.deploy(BlackHole, thop.address, addr.burn, {from: addr.dev});
   // Deploying ChronoDev
   console.log("Deploying ChronoDev...")
   const developer = await deployer.deploy(
-    ChronoDev, [addr.owner1, addr.owner2, addr.owner3],
+    ChronoDev, [addr.owner1],
     addr.contracts, addr.partnership, addr.marketing,
     addr.treasury, addr.charity, addr.treasuryBNB,
     addr.other, thop.address, {from: addr.dev});
   // Deploying  timelock
   console.log("Deploying Timelock...")
-  let delay = 3700  // 1h Testnet -> 24h Mainnet
+  let delay = 86400  // 1h Testnet -> 24h Mainnet
   if (chainId.toString() === "56") {
     delay = 86400
   }
